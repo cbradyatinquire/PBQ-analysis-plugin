@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Google Sans', Roboto, Arial, sans-serif;
+      font-size: 13px;
+      color: #202124;
+      background: #fff;
+    }
+
+    .header {
+      background: #1a73e8;
+      color: white;
+      padding: 14px 16px 12px;
+    }
+    .header h1 { font-size: 15px; font-weight: 500; }
+    .header p  { font-size: 11px; opacity: 0.80; margin-top: 2px; }
+
+    .content { padding: 16px; }
+
+    .section { margin-bottom: 16px; }
+
+    .section-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #5f6368;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 7px;
+    }
+
+    .divider {
+      height: 1px;
+      background: #f1f3f4;
+      margin: 4px -16px 16px;
+    }
+
+    /* ── Column picker ── */
+    select {
+      width: 100%;
+      padding: 8px 28px 8px 10px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #202124;
+      background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%235f6368' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E") no-repeat right 8px center;
+      appearance: none;
+      cursor: pointer;
+    }
+    select:focus  { outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px #e8f0fe; }
+    select:disabled { background-color: #f8f9fa; color: #80868b; }
+
+    .col-meta {
+      font-size: 11px;
+      color: #5f6368;
+      margin-top: 5px;
+      min-height: 15px;
+    }
+    .badge {
+      display: inline-block;
+      background: #e8f0fe;
+      color: #1a73e8;
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .warn-text { color: #e37400; }
+    .err-text  { color: #c5221f; }
+
+    /* ── Option inputs ── */
+    .option-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 7px;
+    }
+
+    .option-letter {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #e8f0fe;
+      color: #1a73e8;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .option-input {
+      flex: 1;
+      padding: 6px 8px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #202124;
+      font-family: inherit;
+      resize: none;
+      overflow: hidden;
+      min-height: 30px;
+      line-height: 1.4;
+    }
+    .option-input:focus { outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px #e8f0fe; }
+    .option-input.empty { border-color: #dadce0; background: #fafafa; }
+
+    .detect-note {
+      font-size: 11px;
+      color: #5f6368;
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+
+    /* ── Correct-answer tiles ── */
+    .answer-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 7px;
+    }
+
+    .ans-opt input[type="checkbox"] { display: none; }
+
+    .ans-opt label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 9px 4px;
+      border: 2px solid #dadce0;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      color: #3c4043;
+      transition: border-color 0.12s, background 0.12s, color 0.12s;
+      user-select: none;
+    }
+    .ans-opt label:hover { border-color: #1a73e8; background: #f6f9ff; }
+    .ans-opt input:checked + label {
+      border-color: #1a73e8;
+      background: #e8f0fe;
+      color: #1a73e8;
+    }
+
+    /* ── Generate button ── */
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 4px;
+      font-size: 13.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .btn-primary { background: #1a73e8; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #1967d2; }
+    .btn-primary:disabled { background: #dadce0; color: #80868b; cursor: not-allowed; }
+
+    /* ── Status ── */
+    .status { display: none; margin-top: 13px; padding: 10px 12px; border-radius: 4px; font-size: 12px; line-height: 1.5; }
+
+    .status.loading {
+      display: flex; align-items: center; gap: 9px;
+      background: #f8f9fa; color: #5f6368;
+    }
+    .status.success {
+      display: block;
+      background: #e6f4ea; color: #137333;
+      border-left: 3px solid #34a853;
+    }
+    .status.error {
+      display: block;
+      background: #fce8e6; color: #c5221f;
+      border-left: 3px solid #ea4335;
+    }
+    .stat-row {
+      display: flex; justify-content: space-between;
+      margin-top: 4px;
+    }
+
+    .spinner {
+      width: 15px; height: 15px; flex-shrink: 0;
+      border: 2px solid #dadce0; border-top-color: #1a73e8;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>PBQ Analysis</h1>
+  <p>Prediction-Based Questioning</p>
+</div>
+
+<div class="content">
+
+  <!-- ── Column picker ── -->
+  <div class="section">
+    <div class="section-label">Question Column</div>
+    <select id="colSelect" onchange="onColChange()" disabled>
+      <option>Loading columns…</option>
+    </select>
+    <div class="col-meta" id="colMeta"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ── Option inputs ── -->
+  <div class="section" id="optionsSection" style="display:none">
+    <div class="section-label">Answer Options</div>
+    <div class="detect-note" id="detectNote">Detected from responses · edit if needed</div>
+    <div id="optionRows">
+      <div class="option-row">
+        <div class="option-letter">A</div>
+        <textarea id="opt0" class="option-input" rows="1" placeholder="Option A text…" oninput="autoResize(this)"></textarea>
+      </div>
+      <div class="option-row">
+        <div class="option-letter">B</div>
+        <textarea id="opt1" class="option-input" rows="1" placeholder="Option B text…" oninput="autoResize(this)"></textarea>
+      </div>
+      <div class="option-row">
+        <div class="option-letter">C</div>
+        <textarea id="opt2" class="option-input" rows="1" placeholder="Option C text…" oninput="autoResize(this)"></textarea>
+      </div>
+      <div class="option-row">
+        <div class="option-letter">D</div>
+        <textarea id="opt3" class="option-input" rows="1" placeholder="Option D text…" oninput="autoResize(this)"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider" id="optDivider" style="display:none"></div>
+
+  <!-- ── Correct answer ── -->
+  <div class="section" id="correctSection" style="display:none">
+    <div class="section-label">Correct Answer <span style="color:#bdc1c6;font-weight:400;text-transform:none;letter-spacing:0">(select all that apply)</span></div>
+    <div class="answer-grid">
+      <div class="ans-opt"><input type="checkbox" id="ans0"><label for="ans0">A</label></div>
+      <div class="ans-opt"><input type="checkbox" id="ans1"><label for="ans1">B</label></div>
+      <div class="ans-opt"><input type="checkbox" id="ans2"><label for="ans2">C</label></div>
+      <div class="ans-opt"><input type="checkbox" id="ans3"><label for="ans3">D</label></div>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="genBtn" onclick="generate()" disabled style="display:none">
+    Generate Chart
+  </button>
+
+  <div class="status loading" id="stLoad"><div class="spinner"></div> Generating chart…</div>
+  <div class="status success" id="stOK"></div>
+  <div class="status error"   id="stErr"></div>
+
+</div>
+
+<script>
+  var columns = [];
+
+  // ── Init ────────────────────────────────────────────────────────────────────
+  (function init() {
+    google.script.run
+      .withSuccessHandler(populateColumns)
+      .withFailureHandler(function(e) { showErr(e.message || 'Could not read sheet.'); })
+      .getQuestionColumns();
+  })();
+
+  // ── Column dropdown ─────────────────────────────────────────────────────────
+  function populateColumns(cols) {
+    columns = cols || [];
+    var sel = document.getElementById('colSelect');
+    sel.disabled = false;
+
+    if (columns.length === 0) {
+      sel.innerHTML = '<option value="">No columns found</option>';
+      document.getElementById('colMeta').innerHTML =
+        '<span class="err-text">Open a sheet with Forms response data, then reopen this panel.</span>';
+      return;
+    }
+
+    // PBQ-looking columns first; alphabetical within same tier
+    columns.sort(function(a, b) {
+      if (b.looksLikePBQ !== a.looksLikePBQ) return b.looksLikePBQ ? 1 : -1;
+      return a.header.localeCompare(b.header);
+    });
+
+    sel.innerHTML = columns.map(function(col) {
+      var tag = col.looksLikePBQ ? ' ✓' : '';
+      return '<option value="' + col.index + '">'
+        + '[' + col.colLetter + '] ' + escHtml(col.header) + tag
+        + ' (' + col.responseCount + ' resp.)</option>';
+    }).join('');
+
+    onColChange();
+  }
+
+  function onColChange() {
+    var idx  = parseInt(document.getElementById('colSelect').value, 10);
+    var meta = document.getElementById('colMeta');
+
+    clearStatuses();
+    hideOptionPanel();
+
+    if (!idx) { meta.textContent = ''; return; }
+
+    var col = columns.find(function(c) { return c.index === idx; });
+    if (!col) return;
+
+    if (col.responseCount === 0) {
+      meta.innerHTML = '<span class="err-text">No responses in this column.</span>';
+      return;
+    }
+
+    if (col.looksLikePBQ) {
+      meta.innerHTML = '<span class="badge">PBQ</span> ' + col.responseCount + ' responses · detecting options…';
+    } else {
+      meta.innerHTML = '<span class="warn-text">' + col.responseCount + ' responses · PBQ format not confirmed — proceed with caution</span>';
+    }
+
+    // Auto-detect options from response data
+    google.script.run
+      .withSuccessHandler(function(result) { populateOptions(result, col); })
+      .withFailureHandler(function(e) {
+        meta.textContent = col.responseCount + ' responses';
+        showOptionPanel();
+        showErr(e.message || 'Could not detect options.');
+      })
+      .discoverOptions(idx);
+  }
+
+  function populateOptions(result, col) {
+    var meta = document.getElementById('colMeta');
+    var note = document.getElementById('detectNote');
+
+    if (col.looksLikePBQ) {
+      meta.innerHTML = '<span class="badge">PBQ</span> ' + col.responseCount + ' responses';
+    } else {
+      meta.innerHTML = col.responseCount + ' responses';
+    }
+
+    // Fill option text inputs
+    for (var i = 0; i < 4; i++) {
+      var ta = document.getElementById('opt' + i);
+      ta.value = result.options[i] || '';
+      ta.classList.toggle('empty', !ta.value);
+      autoResize(ta);
+    }
+
+    if (result.source === 'form') {
+      note.innerHTML = '&#10003; Read directly from linked form';
+      note.style.color = '#137333';
+    } else if (result.source === 'responses') {
+      note.style.color = '';
+      note.textContent = 'Inferred from responses · edit if needed';
+    } else {
+      note.style.color = '';
+      note.textContent = 'Enter option texts manually below';
+    }
+    if (result.warning) {
+      note.innerHTML += ' &mdash; <span class="warn-text">' + escHtml(result.warning) + '</span>';
+    }
+
+    showOptionPanel();
+  }
+
+  function showOptionPanel() {
+    ['optionsSection','optDivider','correctSection','genBtn'].forEach(function(id) {
+      document.getElementById(id).style.display = '';
+    });
+    document.getElementById('genBtn').disabled = false;
+  }
+
+  function hideOptionPanel() {
+    ['optionsSection','optDivider','correctSection','genBtn'].forEach(function(id) {
+      document.getElementById(id).style.display = 'none';
+    });
+  }
+
+  // ── Chart generation ────────────────────────────────────────────────────────
+  function generate() {
+    var colIdx = parseInt(document.getElementById('colSelect').value, 10);
+    if (!colIdx) return;
+
+    var options = [0,1,2,3].map(function(i) {
+      return document.getElementById('opt' + i).value.trim();
+    });
+
+    var correctIdxs = [0,1,2,3].filter(function(i) {
+      return document.getElementById('ans' + i).checked;
+    });
+
+    if (options.every(function(o) { return o === ''; })) {
+      showErr('Please enter at least one answer option text.');
+      return;
+    }
+    if (correctIdxs.length === 0) {
+      showErr('Please select at least one correct answer (A, B, C, or D).');
+      return;
+    }
+
+    clearStatuses();
+    document.getElementById('stLoad').style.display = 'flex';
+    document.getElementById('genBtn').disabled = true;
+
+    google.script.run
+      .withSuccessHandler(onSuccess)
+      .withFailureHandler(function(e) { onFailure(e.message || 'An error occurred.'); })
+      .generatePBQChart(colIdx, options, correctIdxs);
+  }
+
+  function onSuccess(r) {
+    document.getElementById('stLoad').style.display = 'none';
+    document.getElementById('genBtn').disabled = false;
+
+    var unmatchedLine = r.unmatchedCount > 0
+      ? '<div class="stat-row" style="color:#e37400"><span>Unmatched responses:</span><strong>' + r.unmatchedCount + '</strong></div>'
+      : '';
+
+    var el = document.getElementById('stOK');
+    el.innerHTML =
+      '<strong>Chart created</strong>' +
+      '<div class="stat-row"><span>Total responses:</span><strong>' + r.totalResponses + '</strong></div>' +
+      '<div class="stat-row"><span>Correct (' + escHtml(r.correctLabel) + '):</span><strong>' + r.correctCount + ' (' + r.pctCorrect + '%)</strong></div>' +
+      unmatchedLine;
+    el.style.display = 'block';
+  }
+
+  function onFailure(msg) {
+    document.getElementById('stLoad').style.display = 'none';
+    document.getElementById('genBtn').disabled = false;
+    showErr(msg);
+  }
+
+  // ── Utilities ───────────────────────────────────────────────────────────────
+  function showErr(msg) {
+    clearStatuses();
+    var el = document.getElementById('stErr');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function clearStatuses() {
+    ['stLoad','stOK','stErr'].forEach(function(id) {
+      document.getElementById(id).style.display = 'none';
+    });
+  }
+
+  // Auto-grow textareas to fit content without scrollbars
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+    el.classList.toggle('empty', el.value.trim() === '');
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>
