@@ -5,8 +5,6 @@ const COMBO_LABELS = [
   'D', 'AD', 'BD', 'ABD', 'CD', 'ACD', 'BCD', 'ABCD'
 ];
 
-const DATA_SHEET_NAME = '_PBQ_Data_';
-
 // ─── Menu ────────────────────────────────────────────────────────────────────
 
 function onOpen() {
@@ -21,8 +19,45 @@ function onOpen() {
 function showSidebar() {
   const html = HtmlService.createHtmlOutputFromFile('Sidebar')
     .setTitle('PBQ Analysis')
-    .setWidth(300);
+    .setWidth(300);  // note: setWidth is ignored for sidebars; only works for dialogs
   SpreadsheetApp.getUi().showSidebar(html);
+}
+
+// ─── Per-tab form URL storage ─────────────────────────────────────────────────
+// Each sheet tab can be linked to a specific Google Form by storing its URL
+// in DocumentProperties keyed by the tab's permanent gid (sheetId).
+// This overrides the spreadsheet-level getFormUrl(), which only ever returns
+// one form even when multiple forms route to different tabs.
+
+function getTabFormInfo() {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const key   = 'tab_form_' + sheet.getSheetId();
+  const url   = PropertiesService.getDocumentProperties().getProperty(key) || '';
+  if (!url) return { url: '', title: '' };
+  try {
+    const form = FormApp.openByUrl(url);
+    return { url, title: form.getTitle() };
+  } catch (_) {
+    return { url, title: '(could not open form)' };
+  }
+}
+
+function setTabFormUrl(url) {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const key   = 'tab_form_' + sheet.getSheetId();
+  const trimmed = (url || '').trim();
+  if (trimmed) {
+    // Validate before saving
+    try { FormApp.openByUrl(trimmed); } catch (e) {
+      throw new Error('Could not open that form URL. Check the URL and try again.\n(' + e.message + ')');
+    }
+    const form = FormApp.openByUrl(trimmed);
+    PropertiesService.getDocumentProperties().setProperty(key, trimmed);
+    return form.getTitle();
+  } else {
+    PropertiesService.getDocumentProperties().deleteProperty(key);
+    return '';
+  }
 }
 
 // ─── Called from sidebar ──────────────────────────────────────────────────────
@@ -40,7 +75,7 @@ function getQuestionColumns() {
 
   for (let i = 0; i < headers.length; i++) {
     const header = String(headers[i]).trim();
-    if (!header || header === DATA_SHEET_NAME) continue;
+    if (!header) continue;
 
     const responseCount = lastRow > 1
       ? sheet.getRange(2, i + 1, lastRow - 1, 1)
@@ -58,8 +93,6 @@ function getQuestionColumns() {
       const sample = sheet.getRange(2, i + 1, sampleSize, 1).getValues();
       const nonEmpty = sample.filter(r => String(r[0]).trim() !== '');
       if (nonEmpty.length > 0) {
-        // A multi-select response either contains ", " (multiple options chosen) or is
-        // a single option text longer than a typical name/number (>10 chars).
         const plausible = nonEmpty.filter(r => {
           const v = String(r[0]);
           return v.includes(', ') || v.length > 10;
@@ -81,54 +114,68 @@ function getQuestionColumns() {
 }
 
 // Returns up to 4 answer option texts for the given column.
-// Returns { options: string[4], warning: string|null, source: 'form'|'responses'|'none' }.
+// Returns { options: string[4], warning: string|null, correctIdxs: number[]|null,
+//           source: 'form'|'responses'|'none' }.
 //
 // Strategy:
 //  1. If the spreadsheet is linked to a Google Form, read options directly from the
-//     form definition — exact, authoritative, no parsing needed.
+//     form definition — exact, authoritative, order-preserving, includes unselected options.
 //  2. If unlinked (e.g. a saved copy), fall back to inferring options by splitting
 //     response text on the Forms checkbox separator (", ").
 function discoverOptions(colIndex) {
-  const sheet  = SpreadsheetApp.getActiveSheet();
+  const sheet   = SpreadsheetApp.getActiveSheet();
   const lastRow = sheet.getLastRow();
 
-  const empty = { options: ['', '', '', ''], warning: null, source: 'none' };
+  const empty = { options: ['', '', '', ''], warning: null, correctIdxs: null, source: 'none' };
   if (lastRow < 2) return Object.assign(empty, { warning: 'No responses found.' });
 
   const columnHeader = String(sheet.getRange(1, colIndex, 1, 1).getValue()).trim();
 
   // ── Path 1: read directly from the linked form ───────────────────────────
-  const formUrl = SpreadsheetApp.getActiveSpreadsheet().getFormUrl();
+  // Prefer the per-tab stored URL (set by the user in the sidebar) over the
+  // spreadsheet-level getFormUrl(), which returns only one form even when
+  // multiple forms route responses to different tabs.
+  const tabFormUrl = PropertiesService.getDocumentProperties()
+    .getProperty('tab_form_' + sheet.getSheetId());
+  const formUrl = tabFormUrl || SpreadsheetApp.getActiveSpreadsheet().getFormUrl();
   if (formUrl) {
     try {
       const form          = FormApp.openByUrl(formUrl);
       const checkboxItems = form.getItems(FormApp.ItemType.CHECKBOX);
 
-      // Match by exact title first, then by the column header being a prefix
-      // (Forms truncates long titles in some UI contexts but Sheets stores the full text).
       let match = checkboxItems.find(item => item.getTitle().trim() === columnHeader);
       if (!match) {
         match = checkboxItems.find(item => columnHeader.startsWith(item.getTitle().trim()));
       }
 
       if (match) {
-        const choices = match.asCheckboxItem().getChoices().map(c => c.getValue());
-        const options = choices.slice(0, 4);
+        const checkboxItem = match.asCheckboxItem();
+        const allChoices   = checkboxItem.getChoices();
+        const choices      = allChoices.slice(0, 4);
+        const options      = choices.map(c => c.getValue());
         while (options.length < 4) options.push('');
 
+        let correctIdxs = null;
+        try {
+          const correct = choices
+            .map((c, i) => c.isCorrectAnswer() ? i : -1)
+            .filter(i => i >= 0);
+          if (correct.length > 0) correctIdxs = correct;
+        } catch (_) {}
+
         let warning = null;
-        if (choices.length > 4) {
-          warning = `Form has ${choices.length} options — only 4 are supported. Edit below if needed.`;
-        } else if (choices.length < 2) {
+        if (allChoices.length > 4) {
+          warning = `Form has ${allChoices.length} options — only first 4 shown. Edit below if needed.`;
+        } else if (allChoices.length < 2) {
           warning = 'Fewer than 2 options found in the form — check the question type.';
         }
 
-        return { options, warning, source: 'form' };
+        return { options, warning, correctIdxs, source: 'form' };
       }
-      // Linked form found but no checkbox question matched this column header —
-      // fall through to response-based detection.
+      // No matching checkbox question found in the linked form —
+      // fall through to response-based detection below.
     } catch (_) {
-      // FormApp access failed (permissions, deleted form, etc.) — fall through.
+      // FormApp access failed — fall through to response-based detection.
     }
   }
 
@@ -153,10 +200,10 @@ function discoverOptions(colIndex) {
     });
   });
 
-  const minCount  = Math.max(2, Math.floor(responses.length * 0.05));
+  const minCount   = Math.max(2, Math.floor(responses.length * 0.05));
   const candidates = [...tokenCounts.entries()]
     .filter(([, count]) => count >= minCount)
-    .sort((a, b) => tokenFirstIdx.get(a[0]) - tokenFirstIdx.get(b[0]))
+    .sort((a, b) => a[0].localeCompare(b[0]))  // alphabetical matches A./B./C./D. prefix convention
     .map(([text]) => text);
 
   const options = candidates.slice(0, 4);
@@ -171,12 +218,12 @@ function discoverOptions(colIndex) {
     warning = `${candidates.length} candidates found — showing first 4. Edit below if needed.`;
   }
 
-  return { options, warning, source: 'responses' };
+  return { options, warning, correctIdxs: null, source: 'responses' };
 }
 
 // Main chart-generation entry point.
-// options       – array of 4 option texts (may be empty strings if fewer than 4 options)
-// correctIdxs   – 0-based indices of correct options, e.g. [0, 2] means A and C
+// options     – array of 4 option texts (empty string = unused slot)
+// correctIdxs – 0-based indices of correct options, e.g. [0, 2] means A and C
 function generatePBQChart(colIndex, options, correctIdxs) {
   const activeOptions = options.map(o => String(o).trim()).filter(o => o !== '');
   if (activeOptions.length === 0) {
@@ -190,14 +237,11 @@ function generatePBQChart(colIndex, options, correctIdxs) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) throw new Error('No response data found in the selected column.');
 
-  const colData      = sheet.getRange(1, colIndex, lastRow, 1).getValues();
+  const colData       = sheet.getRange(1, colIndex, lastRow, 1).getValues();
   const questionTitle = String(colData[0][0]).trim();
-
-  // Correct-answer bitmask
   const correctBinary = correctIdxs.reduce((acc, i) => acc | (1 << i), 0);
 
-  // Encode each response as a bitmask by substring-matching against option texts.
-  // This works regardless of whether options were prefixed "A."/"B." in the form.
+  // Encode each response as a bitmask via substring-matching against option texts.
   const binaryResponses = [];
   let unmatched = 0;
 
@@ -210,11 +254,7 @@ function generatePBQChart(colIndex, options, correctIdxs) {
       if (opt.trim() && resp.includes(opt.trim())) bitmask |= (1 << j);
     });
 
-    if (bitmask > 0) {
-      binaryResponses.push(bitmask);
-    } else {
-      unmatched++;
-    }
+    if (bitmask > 0) { binaryResponses.push(bitmask); } else { unmatched++; }
   }
 
   if (binaryResponses.length === 0) {
@@ -224,7 +264,7 @@ function generatePBQChart(colIndex, options, correctIdxs) {
     );
   }
 
-  // Build frequency table for all 15 non-empty combinations, sorted most-wrong first.
+  // Build frequency table, sorted most-wrong first.
   const comboData = [];
   for (let j = 1; j <= 15; j++) {
     const delta = getDeltaCorrect(j, correctBinary);
@@ -233,55 +273,66 @@ function generatePBQChart(colIndex, options, correctIdxs) {
   }
   comboData.sort((a, b) => b.delta - a.delta || a.label.localeCompare(b.label));
 
-  // Write chart data to hidden helper sheet
-  const dataSheet = getOrCreateDataSheet();
-  dataSheet.clearContents();
-  const tableData = comboData.map(row => [row.label, row.freq]);
-  dataSheet.getRange(1, 1, tableData.length, 2).setValues(tableData);
-
-  // Remove any previously generated PBQ charts on this sheet
+  // Remove previous PBQ chart and its data columns from this sheet.
+  // Must happen before getLastColumn() so vacated columns aren't counted.
   removePreviousPBQCharts(sheet);
 
-  // Correct-answer label for chart subtitle, e.g. "A, C"
-  const correctLabel = correctIdxs.sort().map(i => 'ABCD'[i]).join(', ');
+  // Write chart data to this sheet, well to the right of any existing content.
+  // Start at ROW 2, not row 1 — Google Sheets treats row 1 of a chart range as a
+  // header and skips it as a data point. Since comboData is sorted most-wrong-first,
+  // the AC (or whatever is furthest from correct) always lands first and would be
+  // silently dropped if written to row 1.
+  const tableData  = comboData.map(row => [row.label, row.freq]);
+  const dataCol    = sheet.getLastColumn() + 3;
+  const dataStart  = 2;
+  const labelRange = sheet.getRange(dataStart, dataCol,     tableData.length, 1);
+  const valueRange = sheet.getRange(dataStart, dataCol + 1, tableData.length, 1);
+  sheet.getRange(dataStart, dataCol, tableData.length, 2).setValues(tableData);
+  sheet.getRange(dataStart, dataCol, tableData.length, 2).setFontColor('#aaaaaa').setFontSize(9);
+  sheet.getRange(dataStart, dataCol, 1, 2).setNote('PBQ chart data — do not edit');
 
-  const chartTitle = questionTitle.length > 55
+  // Flush ensures the values are committed to the spreadsheet before the chart
+  // builder snapshots the range — without this the chart can render as blank.
+  SpreadsheetApp.flush();
+
+  const correctLabel = correctIdxs.sort().map(i => 'ABCD'[i]).join(', ');
+  const chartTitle   = questionTitle.length > 55
     ? questionTitle.slice(0, 52) + '…'
     : questionTitle;
 
   const chartsBefore = sheet.getCharts().map(c => c.getChartId());
 
+  const hAxisTitle = `Correct: ${correctLabel}  ·  ${binaryResponses.length} responses` +
+                     (unmatched > 0 ? `  ·  ${unmatched} unmatched` : '');
+
+  // Add label column first, then value column as two separate addRange calls.
+  // GAS rule: if the first addRange is text-only, it becomes the X-axis domain.
+  // Adding both columns as one 2-column range bypasses this detection and leaves
+  // the chart blank because it can't determine which column is labels vs. series.
   const builtChart = sheet.newChart()
-    .addRange(dataSheet.getRange(1, 1, tableData.length, 2))
     .setChartType(Charts.ChartType.COLUMN)
-    .asColumnChart()
-    .setColors(['#1a73e8'])
+    .addRange(labelRange)
+    .addRange(valueRange)
     .setOption('title', chartTitle)
-    .setOption('subtitle', `Correct: ${correctLabel}  ·  ${binaryResponses.length} responses${unmatched > 0 ? `  ·  ${unmatched} unmatched` : ''}`)
-    .setOption('hAxis', { title: 'Answer combination', textStyle: { fontSize: 11 } })
-    .setOption('vAxis', { title: 'Responses', minValue: 0, format: '0' })
-    .setOption('legend', { position: 'none' })
-    .setOption('bar',   { groupWidth: '75%' })
-    .setOption('chartArea', { left: 55, top: 55, width: '82%', height: '65%' })
-    .setPosition(3, Math.min(colIndex + 1, sheet.getLastColumn() + 1), 10, 10)
+    .setOption('hAxis.title', hAxisTitle)
+    .setOption('vAxis.title', 'Responses')
+    .setOption('vAxis.minValue', 0)
+    .setPosition(3, colIndex + 1, 10, 10)
     .build();
 
   sheet.insertChart(builtChart);
 
+  // Flush after insertChart so the chart list reflects the new chart before we search.
+  // Without this, getCharts() may not yet include the newly inserted chart.
+  SpreadsheetApp.flush();
   const newChart = sheet.getCharts().find(c => !chartsBefore.includes(c.getChartId()));
-  if (newChart) storePBQChartId(sheet.getName(), newChart.getChartId());
+  if (newChart) storePBQChartMeta(sheet.getName(), newChart.getChartId(), dataCol);
 
   const correctCount = binaryResponses.filter(b => b === correctBinary).length;
   const pctCorrect   = Math.round((correctCount / binaryResponses.length) * 100);
 
-  return {
-    questionTitle,
-    totalResponses: binaryResponses.length,
-    unmatchedCount: unmatched,
-    correctCount,
-    pctCorrect,
-    correctLabel
-  };
+  return { questionTitle, totalResponses: binaryResponses.length, unmatchedCount: unmatched,
+           correctCount, pctCorrect, correctLabel };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -302,39 +353,119 @@ function getDeltaCorrect(source, target) {
   return [1, 2, 4, 8].filter(bit => (delta & bit) !== 0).length;
 }
 
-function getOrCreateDataSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let s = ss.getSheetByName(DATA_SHEET_NAME);
-  if (!s) {
-    s = ss.insertSheet(DATA_SHEET_NAME);
-    s.hideSheet();
-  }
-  return s;
-}
+// ─── Chart + data tracking ────────────────────────────────────────────────────
+// Each entry stores both the chart ID and the starting column of its data,
+// so removal cleans up both the chart and its data columns on that sheet tab.
 
-// ─── Chart-ID tracking ────────────────────────────────────────────────────────
-
-function storePBQChartId(sheetName, chartId) {
+function storePBQChartMeta(sheetName, chartId, dataCol) {
   const props = PropertiesService.getDocumentProperties();
-  const store = JSON.parse(props.getProperty('pbq_chart_ids') || '{}');
+  const store = JSON.parse(props.getProperty('pbq_chart_meta') || '{}');
   if (!store[sheetName]) store[sheetName] = [];
-  store[sheetName].push(chartId);
-  props.setProperty('pbq_chart_ids', JSON.stringify(store));
+  store[sheetName].push({ chartId, dataCol });
+  props.setProperty('pbq_chart_meta', JSON.stringify(store));
 }
 
 function removePreviousPBQCharts(sheet) {
-  const props = PropertiesService.getDocumentProperties();
-  const store = JSON.parse(props.getProperty('pbq_chart_ids') || '{}');
-  const ids   = store[sheet.getName()] || [];
+  const props   = PropertiesService.getDocumentProperties();
+  const store   = JSON.parse(props.getProperty('pbq_chart_meta') || '{}');
+  const entries = store[sheet.getName()] || [];
 
+  // Remove tracked charts by stored chart ID.
+  const trackedIds = entries.map(e => e.chartId);
   sheet.getCharts()
-    .filter(c => ids.includes(c.getChartId()))
+    .filter(c => trackedIds.includes(c.getChartId()))
     .forEach(c => sheet.removeChart(c));
 
+  // Clear tracked data columns. Data now starts at row 2 (15 rows = rows 2–16).
+  entries.forEach(e => {
+    try { sheet.getRange(2, e.dataCol, 15, 2).clear(); } catch (_) {}
+  });
+
+  // Fallback: scan every column for the PBQ data note and clear any found.
+  // Check both row 1 and row 2 to handle data written by older versions of the script.
+  const lastCol = sheet.getLastColumn();
+  for (let c = 1; c <= lastCol; c++) {
+    try {
+      const n1 = sheet.getRange(1, c, 1, 1).getNote();
+      const n2 = sheet.getRange(2, c, 1, 1).getNote();
+      if (n1.includes('PBQ chart data') || n2.includes('PBQ chart data')) {
+        sheet.getRange(1, c, 17, 2).clear();  // rows 1–17 covers both old and new layouts
+        c++;
+      }
+    } catch (_) {}
+  }
+
+  SpreadsheetApp.flush();  // commit all clears before getLastColumn() is used for new dataCol
+
   store[sheet.getName()] = [];
-  props.setProperty('pbq_chart_ids', JSON.stringify(store));
+  props.setProperty('pbq_chart_meta', JSON.stringify(store));
 }
 
 function clearPBQCharts() {
   removePreviousPBQCharts(SpreadsheetApp.getActiveSheet());
+}
+
+// ─── Diagnostic (run from Apps Script editor, check Execution Log) ────────────
+
+function debugFormConnection() {
+  const ss      = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet   = ss.getActiveSheet();
+  const ssId    = ss.getId();
+  const sheetId = sheet.getSheetId();
+
+  Logger.log('=== PBQ Form Connection Diagnostics ===');
+  Logger.log('Spreadsheet: ' + ss.getName() + '  (id: ' + ssId + ')');
+  Logger.log('Active sheet: ' + sheet.getName() + '  (sheetId/gid: ' + sheetId + ')');
+  Logger.log('Spreadsheet-level form URL: ' + (ss.getFormUrl() || '(none)'));
+
+  // ── Check developer metadata on the active sheet tab ──────────────────────
+  // Google Forms writes its form ID into the sheet's developer metadata when
+  // linking. If we can read it here, we have a reliable tab→form mapping.
+  Logger.log('--- Developer metadata on active sheet ---');
+  try {
+    const meta = Sheets.Spreadsheets.get(ssId, {
+      fields: 'sheets(properties(sheetId,title),developerMetadata)'
+    }).sheets.find(s => s.properties.sheetId === sheetId);
+
+    if (meta && meta.developerMetadata && meta.developerMetadata.length > 0) {
+      meta.developerMetadata.forEach(m => {
+        Logger.log('  key: ' + m.metadataKey + '  value: ' + m.metadataValue);
+      });
+    } else {
+      Logger.log('  (no developer metadata found on this sheet tab)');
+    }
+  } catch (e) {
+    Logger.log('  Could not read developer metadata: ' + e.message);
+    Logger.log('  (Enable "Google Sheets API" under Advanced Services in the Apps Script editor)');
+  }
+
+  // ── Try opening the spreadsheet-level linked form ─────────────────────────
+  Logger.log('--- Spreadsheet-level linked form ---');
+  const formUrl = ss.getFormUrl();
+  if (formUrl) {
+    try {
+      const form          = FormApp.openByUrl(formUrl);
+      const checkboxItems = form.getItems(FormApp.ItemType.CHECKBOX);
+      Logger.log('Form title: ' + form.getTitle());
+      Logger.log('Destination spreadsheet id: ' + form.getDestinationId());
+      Logger.log('Checkbox questions: ' + checkboxItems.length);
+      checkboxItems.forEach((item, i) => {
+        Logger.log('  [' + i + '] "' + item.getTitle() + '"');
+        item.asCheckboxItem().getChoices().forEach((c, j) => {
+          Logger.log('      choice ' + j + ': "' + c.getValue() + '"');
+        });
+      });
+    } catch (e) {
+      Logger.log('ERROR: ' + e.message);
+    }
+  }
+
+  // ── Sheet column headers ───────────────────────────────────────────────────
+  Logger.log('--- Sheet column headers (row 1) ---');
+  const lastCol = sheet.getLastColumn();
+  if (lastCol > 0) {
+    sheet.getRange(1, 1, 1, lastCol).getValues()[0].forEach((h, i) => {
+      if (String(h).trim()) Logger.log('  col ' + (i+1) + ': "' + h + '"');
+    });
+  }
 }

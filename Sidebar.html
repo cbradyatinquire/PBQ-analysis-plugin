@@ -191,16 +191,129 @@
       animation: spin 0.75s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Form link row ── */
+    .form-link-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 11px;
+      color: #5f6368;
+    }
+    .form-link-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+      background: #dadce0;
+    }
+    .form-link-dot.linked { background: #34a853; }
+    .form-link-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .form-link-btn {
+      background: none; border: none; cursor: pointer;
+      color: #1a73e8; font-size: 11px; padding: 0; white-space: nowrap;
+      text-decoration: underline;
+    }
+    .form-link-btn:hover { color: #1967d2; }
+    .form-link-input-row {
+      display: none;
+      margin-top: 7px;
+      gap: 6px;
+      align-items: center;
+    }
+    .form-link-input-row.visible { display: flex; }
+    .form-url-input {
+      flex: 1;
+      padding: 5px 7px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 11px;
+      color: #202124;
+      font-family: inherit;
+    }
+    .form-url-input:focus { outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px #e8f0fe; }
+    .btn-save-form {
+      padding: 5px 10px;
+      background: #1a73e8; color: #fff;
+      border: none; border-radius: 4px;
+      font-size: 11px; font-weight: 500; cursor: pointer; white-space: nowrap;
+    }
+    .btn-save-form:hover { background: #1967d2; }
+    .form-link-msg { font-size: 10.5px; margin-top: 4px; min-height: 14px; }
+
+    /* ── Refresh row ── */
+    .refresh-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 10px;
+    }
+    .btn-refresh {
+      background: none; border: 1px solid #dadce0; border-radius: 4px;
+      cursor: pointer; color: #5f6368; font-size: 11px; font-family: inherit;
+      padding: 3px 8px; display: flex; align-items: center; gap: 4px;
+    }
+    .btn-refresh:hover { border-color: #1a73e8; color: #1a73e8; background: #f6f9ff; }
+
+    /* ── Visit form link ── */
+    .form-visit-link {
+      color: #1a73e8; font-size: 11px; text-decoration: none; white-space: nowrap; flex-shrink: 0;
+    }
+    .form-visit-link:hover { text-decoration: underline; }
+
+    /* ── Question preview card ── */
+    .q-card {
+      background: #f8f9fa;
+      border: 1px solid #dadce0;
+      border-left: 4px solid #1a73e8;
+      border-radius: 4px;
+      padding: 11px 12px 8px;
+      margin-bottom: 16px;
+    }
+    .q-title {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: #202124;
+      line-height: 1.45;
+      margin-bottom: 9px;
+    }
+    .q-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      margin-bottom: 5px;
+      font-size: 11.5px;
+      color: #3c4043;
+      line-height: 1.4;
+    }
+    .q-option:last-child { margin-bottom: 0; }
+    .q-checkbox {
+      width: 13px; height: 13px;
+      border: 1.5px solid #80868b;
+      border-radius: 2px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .q-letter {
+      font-size: 11px;
+      font-weight: 700;
+      color: #1a73e8;
+      flex-shrink: 0;
+      width: 12px;
+      margin-top: 1px;
+    }
   </style>
 </head>
 <body>
 
 <div class="header">
   <h1>PBQ Analysis</h1>
-  <p>Prediction-Based Questioning</p>
+  <p>Pattern-Based Question Analysis</p>
 </div>
 
 <div class="content">
+
+  <!-- ── Refresh ── -->
+  <div class="refresh-row">
+    <button class="btn-refresh" onclick="refresh()">↺ Refresh for this tab</button>
+  </div>
 
   <!-- ── Column picker ── -->
   <div class="section">
@@ -211,7 +324,28 @@
     <div class="col-meta" id="colMeta"></div>
   </div>
 
+  <!-- ── Form link for this tab ── -->
+  <div class="form-link-row" id="formLinkRow">
+    <div class="form-link-dot" id="formLinkDot"></div>
+    <span class="form-link-name" id="formLinkName">Checking form link…</span>
+    <a id="formVisitLink" class="form-visit-link" href="" target="_blank" style="display:none">Visit ↗</a>
+    <button class="form-link-btn" id="formLinkBtn" onclick="toggleFormInput()"></button>
+  </div>
+  <div class="form-link-input-row" id="formLinkInputRow">
+    <input class="form-url-input" id="formUrlInput" type="text" placeholder="Paste Google Form URL…">
+    <button class="btn-save-form" onclick="saveFormUrl()">Link</button>
+  </div>
+  <div class="form-link-msg" id="formLinkMsg"></div>
+
   <div class="divider"></div>
+
+  <!-- ── Question preview card ── -->
+  <div id="previewSection" style="display:none">
+    <div class="q-card">
+      <div class="q-title" id="previewTitle"></div>
+      <div id="previewOptions"></div>
+    </div>
+  </div>
 
   <!-- ── Option inputs ── -->
   <div class="section" id="optionsSection" style="display:none">
@@ -269,7 +403,87 @@
       .withSuccessHandler(populateColumns)
       .withFailureHandler(function(e) { showErr(e.message || 'Could not read sheet.'); })
       .getQuestionColumns();
+
+    google.script.run
+      .withSuccessHandler(renderFormLink)
+      .withFailureHandler(function() { renderFormLink({ url: '', title: '' }); })
+      .getTabFormInfo();
   })();
+
+  // ── Refresh ─────────────────────────────────────────────────────────────────
+  function refresh() {
+    hideOptionPanel();
+    clearStatuses();
+    document.getElementById('colSelect').innerHTML = '<option>Loading columns…</option>';
+    document.getElementById('colSelect').disabled = true;
+    document.getElementById('colMeta').textContent = '';
+    document.getElementById('formLinkName').textContent = 'Checking form link…';
+    document.getElementById('formLinkDot').classList.remove('linked');
+    document.getElementById('formVisitLink').style.display = 'none';
+    document.getElementById('formLinkInputRow').classList.remove('visible');
+    document.getElementById('formLinkMsg').textContent = '';
+    columns = [];
+
+    google.script.run
+      .withSuccessHandler(populateColumns)
+      .withFailureHandler(function(e) { showErr(e.message || 'Could not read sheet.'); })
+      .getQuestionColumns();
+
+    google.script.run
+      .withSuccessHandler(renderFormLink)
+      .withFailureHandler(function() { renderFormLink({ url: '', title: '' }); })
+      .getTabFormInfo();
+  }
+
+  // ── Form link ───────────────────────────────────────────────────────────────
+  function renderFormLink(info) {
+    var dot   = document.getElementById('formLinkDot');
+    var name  = document.getElementById('formLinkName');
+    var btn   = document.getElementById('formLinkBtn');
+    var visit = document.getElementById('formVisitLink');
+    if (info.title) {
+      dot.classList.add('linked');
+      name.textContent = info.title;
+      btn.textContent  = 'Change';
+      visit.href = info.url || '';
+      visit.style.display = info.url ? '' : 'none';
+    } else {
+      dot.classList.remove('linked');
+      name.textContent = 'No form linked to this tab';
+      btn.textContent  = 'Link form';
+      visit.style.display = 'none';
+    }
+    document.getElementById('formUrlInput').value = info.url || '';
+  }
+
+  function toggleFormInput() {
+    var row = document.getElementById('formLinkInputRow');
+    var visible = row.classList.toggle('visible');
+    if (visible) document.getElementById('formUrlInput').focus();
+    document.getElementById('formLinkMsg').textContent = '';
+  }
+
+  function saveFormUrl() {
+    var url = document.getElementById('formUrlInput').value.trim();
+    var msg = document.getElementById('formLinkMsg');
+    msg.style.color = '#5f6368';
+    msg.textContent = 'Saving…';
+    google.script.run
+      .withSuccessHandler(function(title) {
+        renderFormLink({ url: url, title: title });
+        document.getElementById('formLinkInputRow').classList.remove('visible');
+        msg.style.color = '#137333';
+        msg.textContent = title ? 'Linked: ' + title : 'Form link cleared.';
+        // Re-run option discovery with the newly linked form
+        var idx = parseInt(document.getElementById('colSelect').value, 10);
+        if (idx) onColChange();
+      })
+      .withFailureHandler(function(e) {
+        msg.style.color = '#c5221f';
+        msg.textContent = e.message || 'Could not link form.';
+      })
+      .setTabFormUrl(url);
+  }
 
   // ── Column dropdown ─────────────────────────────────────────────────────────
   function populateColumns(cols) {
@@ -344,6 +558,18 @@
       meta.innerHTML = col.responseCount + ' responses';
     }
 
+    // Question preview card
+    document.getElementById('previewTitle').textContent = col.header;
+    document.getElementById('previewOptions').innerHTML = result.options.map(function(opt, i) {
+      if (!opt) return '';
+      return '<div class="q-option">'
+        + '<div class="q-checkbox"></div>'
+        + '<div class="q-letter">' + 'ABCD'[i] + '</div>'
+        + '<div>' + escHtml(opt) + '</div>'
+        + '</div>';
+    }).join('');
+    document.getElementById('previewSection').style.display = '';
+
     // Fill option text inputs
     for (var i = 0; i < 4; i++) {
       var ta = document.getElementById('opt' + i);
@@ -351,6 +577,12 @@
       ta.classList.toggle('empty', !ta.value);
       autoResize(ta);
     }
+
+    // If the form is a quiz and correct answers are known, pre-tick them
+    [0,1,2,3].forEach(function(i) {
+      var cb = document.getElementById('ans' + i);
+      cb.checked = result.correctIdxs ? result.correctIdxs.indexOf(i) >= 0 : false;
+    });
 
     if (result.source === 'form') {
       note.innerHTML = '&#10003; Read directly from linked form';
@@ -370,14 +602,14 @@
   }
 
   function showOptionPanel() {
-    ['optionsSection','optDivider','correctSection','genBtn'].forEach(function(id) {
+    ['previewSection','optionsSection','optDivider','correctSection','genBtn'].forEach(function(id) {
       document.getElementById(id).style.display = '';
     });
     document.getElementById('genBtn').disabled = false;
   }
 
   function hideOptionPanel() {
-    ['optionsSection','optDivider','correctSection','genBtn'].forEach(function(id) {
+    ['previewSection','optionsSection','optDivider','correctSection','genBtn'].forEach(function(id) {
       document.getElementById(id).style.display = 'none';
     });
   }
