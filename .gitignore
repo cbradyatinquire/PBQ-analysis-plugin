@@ -1,0 +1,8 @@
+# clasp — links local folder to your Apps Script project (personal, not for sharing)
+.clasp.json
+
+# macOS
+.DS_Store
+
+# Node (if you ever add clasp as a local dev dependency)
+node_modules/
