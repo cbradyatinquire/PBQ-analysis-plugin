@@ -79,3 +79,9 @@ clasp pull          # pull changes made in the Apps Script editor
 
 - Google Sheets with one or more Google Forms routing responses to tabs
 - The account running the add-on must own (or have editor access to) the linked Google Forms
+
+---
+
+## Legal
+
+[Privacy Policy](PRIVACY.md) | [Terms of Service](TERMS.md)
