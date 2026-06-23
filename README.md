@@ -84,4 +84,4 @@ clasp pull          # pull changes made in the Apps Script editor
 
 ## Legal
 
-[Privacy Policy](PRIVACY.md) | [Terms of Service](TERMS.md)
+[Privacy Policy](PRIVACY) | [Terms of Service](TERMS)
