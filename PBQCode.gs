@@ -23,11 +23,29 @@ function showSidebar() {
   SpreadsheetApp.getUi().showSidebar(html);
 }
 
+// ─── Forms REST API helper ────────────────────────────────────────────────────
+// Uses forms.body.readonly scope via UrlFetchApp instead of FormApp,
+// which always requires the full forms scope regardless of manifest.
+
+function fetchFormData(url) {
+  const match = url.match(/\/forms\/d\/e?\/([a-zA-Z0-9_-]+)/) ||
+                url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (!match) throw new Error('Could not parse form ID from URL.');
+  const formId = match[1];
+  const resp = UrlFetchApp.fetch(
+    'https://forms.googleapis.com/v1/forms/' + formId,
+    { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true }
+  );
+  if (resp.getResponseCode() !== 200) {
+    throw new Error('Could not open form (HTTP ' + resp.getResponseCode() + '). Check the URL and that you have access to the form.');
+  }
+  return JSON.parse(resp.getContentText());
+}
+
 // ─── Per-tab form URL storage ─────────────────────────────────────────────────
 // Each sheet tab can be linked to a specific Google Form by storing its URL
 // in DocumentProperties keyed by the tab's permanent gid (sheetId).
-// This overrides the spreadsheet-level getFormUrl(), which only ever returns
-// one form even when multiple forms route to different tabs.
 
 function getTabFormInfo() {
   const sheet = SpreadsheetApp.getActiveSheet();
@@ -35,8 +53,8 @@ function getTabFormInfo() {
   const url   = PropertiesService.getDocumentProperties().getProperty(key) || '';
   if (!url) return { url: '', title: '' };
   try {
-    const form = FormApp.openByUrl(url);
-    return { url, title: form.getTitle() };
+    const form = fetchFormData(url);
+    return { url, title: form.info.title || '' };
   } catch (_) {
     return { url, title: '(could not open form)' };
   }
@@ -47,13 +65,12 @@ function setTabFormUrl(url) {
   const key   = 'tab_form_' + sheet.getSheetId();
   const trimmed = (url || '').trim();
   if (trimmed) {
-    // Validate before saving
-    try { FormApp.openByUrl(trimmed); } catch (e) {
+    let form;
+    try { form = fetchFormData(trimmed); } catch (e) {
       throw new Error('Could not open that form URL. Check the URL and try again.\n(' + e.message + ')');
     }
-    const form = FormApp.openByUrl(trimmed);
     PropertiesService.getDocumentProperties().setProperty(key, trimmed);
-    return form.getTitle();
+    return form.info.title || '';
   } else {
     PropertiesService.getDocumentProperties().deleteProperty(key);
     return '';
@@ -131,33 +148,33 @@ function discoverOptions(colIndex) {
 
   const columnHeader = String(sheet.getRange(1, colIndex, 1, 1).getValue()).trim();
 
-  // ── Path 1: read directly from the linked form ───────────────────────────
+  // ── Path 1: read directly from the linked form via Forms REST API ───────────
   const tabFormUrl = PropertiesService.getDocumentProperties()
     .getProperty('tab_form_' + sheet.getSheetId());
   if (tabFormUrl) {
     try {
-      const form          = FormApp.openByUrl(tabFormUrl);
-      const checkboxItems = form.getItems(FormApp.ItemType.CHECKBOX);
+      const formData      = fetchFormData(tabFormUrl);
+      const checkboxItems = (formData.items || []).filter(
+        item => item.questionItem &&
+                item.questionItem.question &&
+                item.questionItem.question.choiceQuestion &&
+                item.questionItem.question.choiceQuestion.type === 'CHECKBOX'
+      );
 
-      let match = checkboxItems.find(item => item.getTitle().trim() === columnHeader);
+      let match = checkboxItems.find(item => (item.title || '').trim() === columnHeader);
       if (!match) {
-        match = checkboxItems.find(item => columnHeader.startsWith(item.getTitle().trim()));
+        match = checkboxItems.find(item => columnHeader.startsWith((item.title || '').trim()));
       }
 
       if (match) {
-        const checkboxItem = match.asCheckboxItem();
-        const allChoices   = checkboxItem.getChoices();
-        const choices      = allChoices.slice(0, 4);
-        const options      = choices.map(c => c.getValue());
+        const allChoices = match.questionItem.question.choiceQuestion.options || [];
+        const choices    = allChoices.slice(0, 4);
+        const options    = choices.map(c => c.value || '');
         while (options.length < 4) options.push('');
 
         let correctIdxs = null;
-        try {
-          const correct = choices
-            .map((c, i) => c.isCorrectAnswer() ? i : -1)
-            .filter(i => i >= 0);
-          if (correct.length > 0) correctIdxs = correct;
-        } catch (_) {}
+        const correct = choices.map((c, i) => c.isCorrect ? i : -1).filter(i => i >= 0);
+        if (correct.length > 0) correctIdxs = correct;
 
         let warning = null;
         if (allChoices.length > 4) {
@@ -168,10 +185,9 @@ function discoverOptions(colIndex) {
 
         return { options, warning, correctIdxs, source: 'form' };
       }
-      // No matching checkbox question found in the linked form —
-      // fall through to response-based detection below.
+      // No matching checkbox question found — fall through to response-based detection.
     } catch (_) {
-      // FormApp access failed — fall through to response-based detection.
+      // Form fetch failed — fall through to response-based detection.
     }
   }
 
