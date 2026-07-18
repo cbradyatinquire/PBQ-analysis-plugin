@@ -132,15 +132,11 @@ function discoverOptions(colIndex) {
   const columnHeader = String(sheet.getRange(1, colIndex, 1, 1).getValue()).trim();
 
   // ── Path 1: read directly from the linked form ───────────────────────────
-  // Prefer the per-tab stored URL (set by the user in the sidebar) over the
-  // spreadsheet-level getFormUrl(), which returns only one form even when
-  // multiple forms route responses to different tabs.
   const tabFormUrl = PropertiesService.getDocumentProperties()
     .getProperty('tab_form_' + sheet.getSheetId());
-  const formUrl = tabFormUrl || SpreadsheetApp.getActiveSpreadsheet().getFormUrl();
-  if (formUrl) {
+  if (tabFormUrl) {
     try {
-      const form          = FormApp.openByUrl(formUrl);
+      const form          = FormApp.openByUrl(tabFormUrl);
       const checkboxItems = form.getItems(FormApp.ItemType.CHECKBOX);
 
       let match = checkboxItems.find(item => item.getTitle().trim() === columnHeader);
