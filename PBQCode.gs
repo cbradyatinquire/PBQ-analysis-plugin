@@ -28,8 +28,12 @@ function showSidebar() {
 // which always requires the full forms scope regardless of manifest.
 
 function fetchFormData(url) {
-  const match = url.match(/\/forms\/d\/e?\/([a-zA-Z0-9_-]+)/) ||
-                url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  // The student fill URL (/d/e/PUBLISHEDID/viewform) uses a different ID
+  // that doesn't work with the Forms API — the edit URL is required.
+  if (/\/forms\/d\/e\//.test(url)) {
+    throw new Error('Please use the form edit URL (open the form in Google Forms and copy the URL ending in /edit), not the student fill link.');
+  }
+  const match = url.match(/\/forms\/d\/([a-zA-Z0-9_-]+)/);
   if (!match) throw new Error('Could not parse form ID from URL.');
   const formId = match[1];
   const resp = UrlFetchApp.fetch(
