@@ -177,8 +177,12 @@ function discoverOptions(colIndex) {
         while (options.length < 4) options.push('');
 
         let correctIdxs = null;
-        const correct = choices.map((c, i) => c.isCorrect ? i : -1).filter(i => i >= 0);
-        if (correct.length > 0) correctIdxs = correct;
+        const grading = match.questionItem.question.grading;
+        if (grading && grading.correctAnswers && grading.correctAnswers.answers) {
+          const correctValues = new Set(grading.correctAnswers.answers.map(a => a.value));
+          const correct = choices.map((c, i) => correctValues.has(c.value || '') ? i : -1).filter(i => i >= 0);
+          if (correct.length > 0) correctIdxs = correct;
+        }
 
         let warning = null;
         if (allChoices.length > 4) {
