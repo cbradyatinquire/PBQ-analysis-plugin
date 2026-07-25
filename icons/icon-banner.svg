@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 140" width="220" height="140">
+  <!-- "PBQ Analysis" pill -->
+  <rect x="26" y="8" width="168" height="34" rx="7" fill="#f0f0f0" stroke="#222" stroke-width="1.5"/>
+  <text x="110" y="32" font-family="Arial Black, Arial" font-weight="900" font-size="20" fill="#1565C0" text-anchor="middle" letter-spacing="0">PBQ Analysis</text>
+
+  <!-- 6 bars, bottom at y=133 -->
+  <rect x="20"  y="99"  width="25" height="34" fill="#1565C0" rx="2"/>
+  <rect x="51"  y="51"  width="25" height="82" fill="#1565C0" rx="2"/>
+  <rect x="82"  y="67"  width="25" height="66" fill="#1565C0" rx="2"/>
+  <rect x="113" y="83"  width="25" height="50" fill="#1565C0" rx="2"/>
+  <rect x="144" y="101" width="25" height="32" fill="#1565C0" rx="2"/>
+  <rect x="175" y="117" width="25" height="16" fill="#1565C0" rx="2"/>
+</svg>

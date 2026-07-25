@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <text x="60" y="48" font-family="Arial Black, Arial" font-weight="900" font-size="32" fill="#F9A825" text-anchor="middle" letter-spacing="2">PBQ</text>
+  <rect x="5"   y="97"  width="19" height="29" fill="#1565C0" rx="2"/>
+  <rect x="28"  y="60"  width="19" height="66" fill="#1565C0" rx="2"/>
+  <rect x="51"  y="71"  width="19" height="55" fill="#1565C0" rx="2"/>
+  <rect x="74"  y="98"  width="19" height="28" fill="#1565C0" rx="2"/>
+  <rect x="97"  y="113" width="19" height="13" fill="#1565C0" rx="2"/>
+</svg>
